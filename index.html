@@ -1,0 +1,543 @@
+<!DOCTYPE html>
+<html lang="pt-BR" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Fernando Leão</title>
+
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#0a0a0a">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <link rel="icon" type="image/png" href="icon-192x192.png">
+  <link rel="apple-touch-icon" href="icon-192x192.png">
+
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+  
+  <style>
+    body {
+      background-color: #0a0a0a;
+      color: #e5e5e5;
+      font-family: 'Inter', sans-serif;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .btn-on { background-color: #22c55e; color: white; }
+    .btn-off { background-color: #27272a; color: #d4d4d8; }
+    .btn-on:hover { background-color: #16a34a; }
+    .btn-off:hover { background-color: #3f3f46; }
+
+    /* --- ESTILOS DA BARRA DE PROGRESSO --- */
+    .progress-bar-container {
+      width: 100%;
+      padding: 1rem 0; 
+      margin-top: 1.5rem;
+    }
+    .bar-track {
+      width: 100%;
+      height: 10px; 
+      background-color: #27272a; 
+      border-radius: 5px;
+      overflow: hidden;
+    }
+    .bar-fill {
+      height: 100%;
+      width: 0%; /* Inicia em zero */
+      /* Gradiente Ciano */
+      background: linear-gradient(to right, #00FFFF, #00BFFF); 
+      transition: width 0.5s ease-out;
+    }
+    .bar-ticks {
+      display: flex;
+      position: relative;
+      width: 100%;
+      height: 1.5rem;
+      margin-top: 0.5rem;
+      font-size: 0.75rem;
+      color: #a1a1aa;
+    }
+
+    /* Estilização para as marcações posicionadas dinamicamente */
+    .tick-label {
+        position: absolute;
+        transform: translateX(-50%); /* Centraliza o texto no ponto de marcação */
+        min-width: 15px; /* Evita que o texto '0' seja cortado */
+        text-align: center;
+    }
+    .tick-label:first-child { 
+        transform: translateX(0%); /* Ajusta o 0 para a extrema esquerda */
+        text-align: left;
+    }
+    .tick-label:last-child {
+        transform: translateX(-100%); /* Ajusta o 60 para a extrema direita */
+        text-align: right;
+    }
+
+
+    /* --- ESTILOS DO MOSTRADOR NUMÉRICO --- */
+    .digital-display {
+      text-align: center;
+      padding: 1rem;
+      background-color: #18181b; 
+      border-radius: 12px;
+      margin-bottom: 1.5rem;
+      box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3);
+    }
+    .display-value {
+      font-size: 4rem;
+      font-weight: 700;
+      line-height: 1;
+      color: #00FFFF; 
+      text-shadow: 0 0 10px rgba(0, 255, 255, 0.4); 
+    }
+    .display-units {
+      font-size: 1rem;
+      color: #a1a1aa;
+      margin-top: 0.25rem;
+    }
+
+    /* NOVO: Estilo para o ponto de status do sensor */
+    .sensor-dot {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      margin-right: 0.5rem; /* Espaçamento à direita do texto */
+      display: inline-block;
+      transition: background-color 0.3s ease;
+      flex-shrink: 0; 
+    }
+    .dot-open { background-color: #ef4444; } /* Vermelho: Aberto */
+    .dot-closed { background-color: #22c55e; } /* Verde: Fechado */
+
+    /* Estilos de Modais e Botões (Omitidos para brevidade) */
+    .modal-backdrop {
+      position: fixed; inset: 0; background: rgba(0,0,0,0.85); display: none; align-items: center; justify-content: center; z-index: 60; padding: 1rem; backdrop-filter: blur(4px);
+    }
+    .modal-card {
+      background: #0f1720; border: 1px solid rgba(255,255,255,0.04); box-shadow: 0 10px 30px rgba(2,6,23,0.6); border-radius: 12px; max-width: 520px; width: 100%; padding: 1.25rem; color: #e6eef8;
+    }
+    .modal-close {
+      background: transparent; border: none; color: #a8b3c7; cursor: pointer; font-size: 1rem; padding: 0.25rem;
+    }
+    .contact-line { display:flex; gap:0.6rem; align-items:flex-start; }
+    .contact-icon { width:28px; height:28px; display:inline-flex; align-items:center; justify-content:center; }
+    .contact-text { color:#dbe7ff; }
+    .contact-link { color: #9fe7b6; text-decoration: none; font-weight:700; }
+    
+    .gear-btn, .logout-btn {
+      background: transparent; border: none; color: #cbd5e1; cursor: pointer; font-size: 1.35rem; line-height: 1; padding: 0.25rem;
+    }
+    .gear-btn:hover { color: #ffffff; transform: rotate(15deg); transition: transform .2s ease; }
+    .logout-btn:hover { color: #ef4444; }
+    .login-input {
+      width: 100%; background-color: #18181b; border: 1px solid #3f3f46; color: white; padding: 0.75rem; border-radius: 0.5rem; margin-bottom: 1rem; outline: none;
+    }
+    .login-input:focus { border-color: #22c55e; }
+    .login-btn {
+      width: 100%; background-color: #2563eb; color: white; padding: 0.75rem; border-radius: 0.5rem; font-weight: 600; transition: background-color 0.2s;
+    }
+    .login-btn:hover { background-color: #1d4ed8; }
+  </style>
+</head>
+<body class="flex flex-col items-center min-h-screen p-4">
+
+  <div class="w-full max-w-md">
+    <header class="flex justify-between items-center mb-4">
+      <div class="flex items-center space-x-3">
+        <h1 class="text-2xl font-bold text-zinc-100">🌬️ Fernando Leão</h1>
+      </div>
+      <div class="flex items-center space-x-2">
+        <div id="status-dot" class="w-3 h-3 rounded-full bg-red-600 transition-colors"></div>
+        <span id="status-text" class="text-sm text-zinc-400">Desconectado</span>
+        <button id="btn-logout" class="logout-btn" title="Sair" style="display:none;">➜</button>
+        <button id="btn-config" class="gear-btn" title="Infos">⚙️</button>
+      </div>
+    </header>
+
+    <div id="info-conexao" class="bg-zinc-900/70 rounded-xl p-4 mb-4 text-sm text-zinc-300">
+      <p><strong>Broker:</strong> HiveMQ Cloud (Secure)</p>
+      <p><strong>Status:</strong> <span id="mqtt-status">Aguardando conexão...</span></p>
+      <p><strong>Cliente:</strong> WebApp MQTT</p> 
+      <p><strong>Última atualização:</strong> <span id="ultimo-update">--</span></p> 
+      <p><strong>DMX V1.0:</strong> <span id="esp-status" class="text-red-400">OFFLINE</span></p>
+    </div>
+
+    <div class="bg-zinc-900 rounded-xl p-4 mb-4">
+      
+      <div class="digital-display">
+        <span id="gauge-value" class="display-value">0.0</span>
+        <div class="display-units">km/h</div>
+      </div>
+      
+      <div class="progress-bar-container">
+        
+        <div class="bar-track">
+          <div id="bar-fill" class="bar-fill"></div>
+        </div>
+        
+        <div id="bar-ticks" class="bar-ticks">
+          </div>
+      </div>
+    </div>
+    
+    <div class="grid grid-cols-2 gap-3">
+      <button id="btn-carga1" data-topic="wemos/control/carga1" class="btn-off p-4 rounded-xl text-left transition-colors" disabled>
+        <span class="text-base font-semibold">Bomba 1</span>
+        <div id="status-carga1" class="text-xs">OFF</div>
+      </button>
+      <button id="btn-carga2" data-topic="wemos/control/carga2" class="btn-off p-4 rounded-xl text-left transition-colors" disabled>
+        <span class="text-base font-semibold">Bomba 2</span>
+        <div id="status-carga2" class="text-xs">OFF</div>
+      </button>
+      <button id="btn-carga3" data-topic="wemos/control/carga3" class="btn-off p-4 rounded-xl text-left transition-colors" disabled>
+        <span class="text-base font-semibold">Refletor</span>
+        <div id="status-carga3" class="text-xs">OFF</div>
+      </button>
+      <button id="btn-carga4" data-topic="wemos/control/carga4" class="btn-off p-4 rounded-xl text-left transition-colors" disabled>
+        <span class="text-base font-semibold">Trava 1</span>
+        <div id="status-carga4" class="text-xs">OFF</div>
+      </button>
+      <button id="btn-led" data-topic="wemos/control/led" class="btn-off p-4 rounded-xl text-left transition-colors" disabled>
+        <span class="text-base font-semibold">LED Nano</span>
+        <div id="status-led" class="text-xs">OFF</div>
+      </button>
+      
+      <div class="bg-zinc-900 p-4 rounded-xl text-left">
+          <span class="text-base font-semibold text-zinc-300">Último Código RF</span>
+          <div id="last-rf-code" class="text-xs text-zinc-400 font-mono mt-1">Nenhum</div>
+      </div>
+    </div> <div class="bg-zinc-900 rounded-xl p-4 mt-4 w-full">
+        <h3 class="text-lg font-bold mb-3 text-zinc-100">Status dos Sensores</h3>
+        <div class="grid grid-cols-2 gap-3 text-sm">
+            <div class="flex items-center p-2 rounded-lg bg-zinc-800/50">
+                <span id="dot-s1" class="sensor-dot dot-open"></span>
+                <span class="text-zinc-300">Sensor 1</span>
+            </div>
+            <div class="flex items-center p-2 rounded-lg bg-zinc-800/50">
+                <span id="dot-s2" class="sensor-dot dot-open"></span>
+                <span class="text-zinc-300">Sensor 2</span>
+            </div>
+            <div class="flex items-center p-2 rounded-lg bg-zinc-800/50">
+                <span id="dot-s3" class="sensor-dot dot-open"></span>
+                <span class="text-zinc-300">Sensor 3</span>
+            </div>
+            <div class="flex items-center p-2 rounded-lg bg-zinc-800/50">
+                <span id="dot-s4" class="sensor-dot dot-open"></span>
+                <span class="text-zinc-300">Sensor 4</span>
+            </div>
+        </div>
+    </div>
+    <footer class="mt-6 text-center text-zinc-500 text-sm">
+      Desenvolvido por <span class="text-zinc-300 font-semibold">DMX Eng. Eletrônica</span>
+    </footer>
+  </div>
+
+  <div id="modal-login" class="modal-backdrop">
+    <div class="modal-card">
+      <h3 class="text-xl font-bold text-center mb-4 text-zinc-100">🔒 Autenticação</h3>
+      <p class="text-zinc-400 text-sm text-center mb-6">Insira credenciais do Broker MQTT</p>
+      <form id="form-login">
+        <input type="text" id="input-user" class="login-input" placeholder="Usuário" required autocomplete="username">
+        <input type="password" id="input-pass" class="login-input" placeholder="Senha" required autocomplete="current-password">
+        <button type="submit" class="login-btn">Conectar</button>
+      </form>
+      <p id="login-msg" class="text-red-500 text-sm text-center mt-3 hidden">Erro de autenticação</p>
+    </div>
+  </div>
+
+  <div id="modal-info" class="modal-backdrop">
+    <div class="modal-card">
+      <div class="flex justify-between items-start gap-4 mb-3">
+        <div>
+          <h3 style="font-size:1.05rem; font-weight:700; color:#e6eef8;">D.S. Montenegro — Eng. Eletrônico</h3>
+          <p style="margin-top:6px; color:#bcd1ea; font-size:0.95rem;">
+            Soluções em automação residencial e industrial. Projetamos placas, softwares e sistemas embarcados.
+          </p>
+        </div>
+        <button id="btn-close-modal" class="modal-close">✕</button>
+      </div>
+      
+      <div class="space-y-3 mt-3">
+        <div class="contact-line">
+          <div class="contact-icon">
+            <svg width="28" height="28" viewBox="0 0 24 24"><circle cx="12" cy="12" r="12" fill="#25D366"/><path d="M17.1 14.9c-.3-.1-1.9-.9-2.2-1-.2-.1-.3-.1-.5.1s-.6.9-.8 1.1c-.2.2-.4.3-.7.1-.3-.1-1.2-.5-2.4-1.5-1.1-1-1.7-2.2-1.9-2.6-.2-.4.02-.6.16-.8.16-.15.36-.4.53-.6.16-.18.24-.3.34-.5.1-.2.05-.4-.02-.5-.07-.1-.8-1.9-1-2.6-.25-.7-.5-.6-.7-.6l-.6-.01c-.2 0-.5.07-.8.36-.3.3-.98 1-1 2.5 0 1.4 1.03 2.8 1.2 3 .16.2 2 3.2 4.9 4.6 2.9 1.4 2.9.9 3.4.8.5-.05 1.7-.7 1.9-1.4.2-.7.2-1.2.1-1.4-.09-.12-.28-.16-.57-.26z" fill="#fff"/></svg>
+          </div>
+          <div>
+            <div class="contact-text text-xs">WhatsApp</div>
+            <a class="contact-link text-sm" href="https://wa.me/5585988593032" target="_blank">+55 85 9 8859-3032</a>
+          </div>
+        </div>
+        <div class="contact-line">
+          <div class="contact-icon">
+            <svg width="28" height="28" viewBox="0 0 24 24"><rect width="24" height="24" rx="4" fill="transparent"/><path d="M3 6.5h18v11a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-11z" fill="#fff"/><path d="M21 6.5L12 13 3 6.5" fill="#D44638"/><path d="M3 6.5l4.5 3.5L12 9.5l4.5 3.5L21 6.5" fill="none" stroke="#4285F4" stroke-width="0.6" opacity="0.85"/></svg>
+          </div>
+          <div>
+            <div class="contact-text text-xs">E-mail</div>
+            <a class="contact-link text-sm" href="mailto:monte.eng@gmail.com">monte.eng@gmail.com</a>
+          </div>
+        </div>
+      </div>
+      <div style="margin-top:0.9rem; color:#98a8c7; font-size:0.92rem; line-height:1.35;">
+        Entre em contato pelos canais acima para projetos, consultoria ou orçamentos.
+      </div>
+    </div>
+  </div>
+  <script>
+    // PWA Register
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js'));
+    }
+
+    const BROKER_URL = "wss://1c31abba3dd540d098fa35376d878815.s1.eu.hivemq.cloud:8884/mqtt";
+    const TOPICS = ["wemos/status/led", "wemos/status/carga1", "wemos/status/carga2", "wemos/status/carga3", "wemos/status/carga4"];
+    // NOVO: Tópicos de Status dos Sensores
+    const TOPICS_SENSORES = ["wemos/status/s1", "wemos/status/s2", "wemos/status/s3", "wemos/status/s4"]; 
+
+    // NOVO: Tópico para o código do controle remoto RF
+    const TOPIC_RF_CODE = "wemos/controle/portao"; 
+    
+    // Elementos UI
+    const modalLogin = document.getElementById('modal-login');
+    const btnLogout = document.getElementById('btn-logout');
+    const loginMsg = document.getElementById('login-msg');
+    const mqttStatus = document.getElementById('mqtt-status');
+    const statusDot = document.getElementById('status-dot');
+    const statusText = document.getElementById('status-text');
+    const espStatusEl = document.getElementById('esp-status');
+    const ultimoUpdate = document.getElementById('ultimo-update'); 
+    
+    // NOVOS ELEMENTOS DA BARRA
+    const gaugeValueEl = document.getElementById('gauge-value');
+    const barFillEl = document.getElementById('bar-fill'); 
+    const barTicksEl = document.getElementById('bar-ticks');
+    // NOVO: Elemento para mostrar o código RF
+    const lastRfCodeEl = document.getElementById('last-rf-code'); 
+    
+    // NOVO: Elementos UI para os pontos dos sensores
+    const sensorDots = {
+      "wemos/status/s1": document.getElementById('dot-s1'),
+      "wemos/status/s2": document.getElementById('dot-s2'),
+      "wemos/status/s3": document.getElementById('dot-s3'),
+      "wemos/status/s4": document.getElementById('dot-s4')
+    };
+    
+    // CONSTANTES DO CÁLCULO
+    const MAX_WIND_SPEED = 60; 
+
+    const botoes = {
+      "wemos/status/led": document.getElementById('btn-led'),
+      "wemos/status/carga1": document.getElementById('btn-carga1'),
+      "wemos/status/carga2": document.getElementById('btn-carga2'),
+      "wemos/status/carga3": document.getElementById('btn-carga3'),
+      "wemos/status/carga4": document.getElementById('btn-carga4')
+    };
+    const labels = {
+      "wemos/status/led": document.getElementById('status-led'),
+      "wemos/status/carga1": document.getElementById('status-carga1'),
+      "wemos/status/carga2": document.getElementById('status-carga2'),
+      "wemos/status/carga3": document.getElementById('status-carga3'),
+      "wemos/status/carga4": document.getElementById('status-carga4')
+    };
+
+    let client = null;
+    let estados = {};
+    let lastHeartbeat = 0;
+    const received = new Set();
+    const ESP_TIMEOUT_MS = 8000;
+
+    // ---- FUNÇÕES DE ESTADO ----
+    function disableAll() { 
+      Object.values(botoes).forEach(b => { 
+        b.disabled=true; 
+        b.classList.replace('btn-on','btn-off'); 
+      }); 
+    }
+    function enableAll() { 
+        Object.values(botoes).forEach(b => {
+             b.disabled=false; 
+        }); 
+    }
+    function allStatusReceived() { return TOPICS.every(x => received.has(x)); }
+    // ---- FIM FUNÇÕES DE ESTADO ----
+
+    // ---- LÓGICA DE GRADUAÇÃO (V6.0: 5 em 5) ----
+    function generateTicks() {
+        barTicksEl.innerHTML = '';
+        
+        // Gera marcações de 5 em 5 de 0 até 60
+        for (let value = 0; value <= MAX_WIND_SPEED; value += 5) {
+            const percentage = (value / MAX_WIND_SPEED) * 100;
+
+            const tick = document.createElement('span');
+            tick.className = 'tick-label';
+            tick.textContent = value;
+            
+            // Posiciona a marca de acordo com a porcentagem
+            tick.style.left = `${percentage}%`;
+            
+            barTicksEl.appendChild(tick);
+        }
+    }
+
+    // Chamada inicial para gerar as marcas ao carregar
+    document.addEventListener('DOMContentLoaded', generateTicks);
+    // ---- FIM LÓGICA DE GRADUAÇÃO ----
+
+
+    // ---- LOGIN LOGIC ----
+    const sUser = sessionStorage.getItem('mqtt_user');
+    const sPass = sessionStorage.getItem('mqtt_pass');
+    
+    if(sUser && sPass) { 
+      iniciar(sUser, sPass); 
+    } else { 
+      modalLogin.style.display = 'flex'; 
+    }
+
+    document.getElementById('form-login').onsubmit = (e) => {
+      e.preventDefault();
+      loginMsg.classList.add('hidden');
+      iniciar(document.getElementById('input-user').value, document.getElementById('input-pass').value);
+    };
+
+    btnLogout.onclick = () => { 
+      sessionStorage.removeItem('mqtt_user');
+      sessionStorage.removeItem('mqtt_pass');
+      location.reload(); 
+    };
+    // ---- FIM LOGIN LOGIC ----
+
+    function bindButtonClicks() {
+        Object.keys(botoes).forEach(k => {
+            const btn = botoes[k];
+            btn.onclick = null; 
+            btn.onclick = () => {
+                client.publish(btn.dataset.topic, (estados[k] ? "0" : "1"));
+            };
+        });
+    }
+
+    function iniciar(u, p) {
+      if(client) client.end();
+      mqttStatus.textContent = "Autenticando...";
+      
+      client = mqtt.connect(BROKER_URL, { 
+        username: u, 
+        password: p, 
+        clientId: 'WebApp_' + Math.random().toString(16).substr(2, 8),
+        reconnectPeriod: 3000 
+      });
+
+      client.on('connect', () => {
+        modalLogin.style.display = 'none';
+        btnLogout.style.display = 'block';
+        sessionStorage.setItem('mqtt_user', u); 
+        sessionStorage.setItem('mqtt_pass', p);
+        statusDot.classList.replace('bg-red-600', 'bg-green-500');
+        statusText.textContent = "Conectado";
+        mqttStatus.textContent = "Online e Seguro";
+        ultimoUpdate.textContent = new Date().toLocaleString(); 
+        
+        // Subscrição dos tópicos (incluindo os novos de sensores)
+        client.subscribe([...TOPICS, ...TOPICS_SENSORES, "wemos/sensor/vento", "wemos/status/system", TOPIC_RF_CODE]); 
+        
+        bindButtonClicks(); 
+        client.publish("wemos/request/status", "1");
+      });
+
+      client.on('error', () => {
+        client.end();
+        if(modalLogin.style.display !== 'none') {
+           loginMsg.classList.remove('hidden');
+           loginMsg.textContent = "Credenciais Inválidas";
+        }
+      });
+
+      client.on('close', () => {
+        statusDot.classList.replace('bg-green-500', 'bg-red-600');
+        statusText.textContent = "Desconectado";
+        espStatusEl.innerText = "OFFLINE";
+        espStatusEl.className = "text-red-400";
+        disableAll();
+        // Limpa o código RF
+        lastRfCodeEl.textContent = "Nenhum";
+      });
+
+      client.on('message', (t, m) => {
+        const msg = m.toString();
+        
+        // LÓGICA CRÍTICA DA BARRA DE PROGRESSO
+        if(t === "wemos/sensor/vento") {
+           const val = parseFloat(msg) || 0;
+           gaugeValueEl.textContent = val.toFixed(1); 
+           
+           // Calcula a porcentagem (limita a 100%)
+           const percentage = Math.min(100, (val / MAX_WIND_SPEED) * 100);
+           
+           // Aplica a largura da barra
+           barFillEl.style.width = percentage + '%';
+
+           ultimoUpdate.textContent = new Date().toLocaleString();
+        } 
+        // Lógica para o código RF (Portão)
+        else if (t === TOPIC_RF_CODE) {
+           // O código RF (HEX) é exibido diretamente
+           lastRfCodeEl.textContent = msg; 
+           lastRfCodeEl.classList.add('text-green-400');
+           setTimeout(() => {
+                // Após 3 segundos, volta para a cor normal
+                lastRfCodeEl.classList.remove('text-green-400');
+           }, 3000);
+           ultimoUpdate.textContent = new Date().toLocaleString();
+        }
+        // FIM LÓGICA CRÍTICA
+
+        // NOVO: Lógica para os Sensores de Entrada
+        else if(TOPICS_SENSORES.includes(t)) {
+            const dot = sensorDots[t];
+            // Mensagem de "1" ou "open" -> Aberto (Vermelho)
+            // Mensagem de "0" ou "closed" -> Fechado (Verde)
+            if(msg === "1" || msg.toLowerCase() === "open") {
+                dot.classList.replace('dot-closed', 'dot-open');
+            } else if(msg === "0" || msg.toLowerCase() === "closed") {
+                dot.classList.replace('dot-open', 'dot-closed');
+            }
+            ultimoUpdate.textContent = new Date().toLocaleString();
+        }
+        // FIM LÓGICA SENSORES
+
+        else if(t === "wemos/status/system") {
+           lastHeartbeat = Date.now();
+           espStatusEl.innerText = "ONLINE";
+           espStatusEl.className = "text-green-400";
+           if(allStatusReceived()) enableAll();
+        } else if(TOPICS.includes(t)) {
+           const st = (msg == "1" || msg.toLowerCase() == "on") ? 1 : 0;
+           estados[t] = st;
+           received.add(t);
+           const btn = botoes[t];
+           const lbl = labels[t];
+           if(st) { btn.classList.replace('btn-off','btn-on'); lbl.textContent="ON"; }
+           else { btn.classList.replace('btn-on','btn-off'); lbl.textContent="OFF"; }
+           if(Date.now() - lastHeartbeat < ESP_TIMEOUT_MS && allStatusReceived()) enableAll();
+        }
+      });
+    }
+
+    // Timer de Heartbeat do ESP
+    setInterval(() => {
+      if(client && client.connected && lastHeartbeat > 0 && Date.now() - lastHeartbeat > ESP_TIMEOUT_MS) {
+        espStatusEl.innerText = "OFFLINE"; 
+        espStatusEl.className = "text-red-400"; 
+        disableAll();
+      }
+    }, 2000);
+
+    // Modal Info
+    const mInfo = document.getElementById('modal-info');
+    document.getElementById('btn-config').onclick = () => mInfo.style.display = 'flex';
+    document.getElementById('btn-close-modal').onclick = () => mInfo.style.display = 'none';
+    mInfo.onclick = (e) => { if(e.target === mInfo) mInfo.style.display = 'none'; };
+  </script>
+</body>
+</html>
